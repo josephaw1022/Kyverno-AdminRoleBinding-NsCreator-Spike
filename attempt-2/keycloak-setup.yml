@@ -1,0 +1,101 @@
+---
+- name: Configure Keycloak for Kubernetes OIDC
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    keycloak_url: https://keycloak.localhost
+    keycloak_realm: master
+    keycloak_admin_user: admin
+    keycloak_admin_pass: admin
+    kube_client_secret: kube-client-secret
+    kube_users:
+      - username: user-admin
+        groups: [kube-admin]
+      - username: user-dev
+        groups: [kube-dev]
+
+  tasks:
+    - name: Create groups
+      middleware_automation.keycloak.keycloak_group:
+        name: "{{ item }}"
+        realm: "{{ keycloak_realm }}"
+        auth_username: "{{ keycloak_admin_user }}"
+        auth_password: "{{ keycloak_admin_pass }}"
+        keycloak_url: "{{ keycloak_url }}"
+        validate_certs: false
+      loop:
+        - kube-admin
+        - kube-dev
+
+    - name: Create users
+      middleware_automation.keycloak.keycloak_user:
+        realm: "{{ keycloak_realm }}"
+        username: "{{ item.username }}"
+        enabled: true
+        email: "{{ item.username }}@example.com"
+        first_name: "{{ item.username }}"
+        last_name: "{{ item.username }}"
+        password: "{{ item.username }}"
+        verify_email: true
+        groups: "{{ item.groups }}"
+        auth_username: "{{ keycloak_admin_user }}"
+        auth_password: "{{ keycloak_admin_pass }}"
+        keycloak_url: "{{ keycloak_url }}"
+        validate_certs: false
+      loop: "{{ kube_users }}"
+
+    - name: Create OIDC client for Kubernetes
+      middleware_automation.keycloak.keycloak_client:
+        realm: "{{ keycloak_realm }}"
+        client_id: kube
+        secret: "{{ kube_client_secret }}"
+        name: kube
+        enabled: true
+        client_authenticator_type: client-secret
+        protocol: openid-connect
+        access_type: confidential
+        standard_flow_enabled: false
+        direct_access_grants_enabled: true
+        service_accounts_enabled: false
+        root_url: ""
+        redirect_uris: []
+        web_origins: []
+        auth_username: "{{ keycloak_admin_user }}"
+        auth_password: "{{ keycloak_admin_pass }}"
+        keycloak_url: "{{ keycloak_url }}"
+        validate_certs: false
+
+    - name: Create "groups" client scope
+      middleware_automation.keycloak.keycloak_clientscope:
+        realm: "{{ keycloak_realm }}"
+        name: groups
+        protocol: openid-connect
+        protocol_mappers:
+          - name: groups
+            protocol: openid-connect
+            protocol_mapper: group-membership
+            config:
+              "full.path": "false"
+              "id.token.claim": "true"
+              "access.token.claim": "true"
+              "claim.name": "groups"
+              "userinfo.token.claim": "true"
+        auth_username: "{{ keycloak_admin_user }}"
+        auth_password: "{{ keycloak_admin_pass }}"
+        keycloak_url: "{{ keycloak_url }}"
+        validate_certs: false
+
+    - name: Assign default scopes to client
+      middleware_automation.keycloak.keycloak_clientscope_assign:
+        realm: "{{ keycloak_realm }}"
+        client_id: kube
+        default_scopes:
+          - email
+          - profile
+          - groups
+        auth_username: "{{ keycloak_admin_user }}"
+        auth_password: "{{ keycloak_admin_pass }}"
+        keycloak_url: "{{ keycloak_url }}"
+        validate_certs: false
